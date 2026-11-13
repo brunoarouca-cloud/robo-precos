@@ -36,13 +36,25 @@ BUSCAS = {
     "Electrolux":    lambda q: f"https://loja.electrolux.com.br/{quote(q)}",
     "Zoom":          lambda q: f"https://www.zoom.com.br/busca/{quote_plus(q)}",
     "Buscapé":       lambda q: f"https://www.buscape.com.br/busca/{quote_plus(q)}",
+    "Época":         lambda q: f"https://www.epocacosmeticos.com.br/pesquisa?q={quote_plus(q)}",
+    "Beleza na Web": lambda q: f"https://www.belezanaweb.com.br/busca/?q={quote_plus(q)}",
 }
+# Em quais lojas buscar cada tipo de produto (evita acessos inúteis e acelera a varredura)
+LOJAS_ELETRO = ["Magalu", "Mercado Livre", "Amazon", "Americanas", "KaBuM!", "Electrolux", "Zoom", "Buscapé"]
+LOJAS_CELULAR = ["Magalu", "Mercado Livre", "Amazon", "Americanas", "KaBuM!", "Zoom", "Buscapé"]
+LOJAS_PERFUME = ["Magalu", "Mercado Livre", "Amazon", "Época", "Beleza na Web", "Zoom", "Buscapé"]
+EXCLUIR_CELULAR = ["capa ", "capinha", "case ", "película", "pelicula", "carregador", "cabo ", "seminovo",
+                   "vitrine", "excelente estado", "bom estado", "sem caixa", "vidro traseiro"]
+EXCLUIR_PERFUME = ["elixir", "intense", "body lotion", "loção", "locao", "kit ", "miniatura",
+                   "decant", "contratipo", "inspirad", "similar", "tester", "sem caixa",
+                   "amostra", "desodorante", "refil"]
 LOJA_NOME = {  # nomes bonitos para páginas de produto
     "www.casasbahia.com.br": "Casas Bahia", "www.extra.com.br": "Extra",
     "www.zoom.com.br": "Zoom", "www.buscape.com.br": "Buscapé",
     "www.kabum.com.br": "KaBuM!", "www.mibrasil.com.br": "Mi Brasil",
     "loja.electrolux.com.br": "Electrolux", "site.fastshop.com.br": "Fast Shop",
     "www.magazineluiza.com.br": "Magalu", "www.amazon.com.br": "Amazon",
+    "www.extrafarma.com.br": "Extrafarma",
 }
 # Anúncios descartados na busca (usados, peças, acessórios).
 EXCLUIR = ["usado", "recondicionado", "seminovo", "vitrine", "peça", "peças", "placa",
@@ -117,6 +129,64 @@ PRODUTOS = [
     {"id": "ERB60", "categoria": "Robô aspirador", "nome": "Electrolux ERB60/ERB62 Wi-Fi com mapeamento",
      "busca": "robo aspirador electrolux erb60", "padrao": r"erb6[02]\b",
      "preco_min": 1000, "preco_max": 3500, "alvo": 1400, "ref_6m": None, "urls": []},
+
+    # ---------- iPHONE (novo e lacrado; só 256GB e 512GB) ----------
+    # Cada capacidade é um item próprio (alvo e histórico separados); a busca na
+    # loja é feita uma vez só por modelo e reaproveitada pelas duas capacidades.
+    {"id": "IP17_256", "categoria": "iPhone", "nome": "iPhone 17 256GB",
+     "busca": "iphone 17", "lojas": LOJAS_CELULAR, "excluir": EXCLUIR_CELULAR,
+     "padrao": r"iphone\s?17(?!\d)(?!\s?(pro|air|plus|e\b))(?=.*\b256\s?gb)",
+     "preco_min": 4000, "preco_max": 9000, "alvo": 5100,
+     # estimativa: menor ~R$ 5.299 (Buscapé, nov/26); preço normal ~R$ 6.000
+     "ref_6m": {"min": 5299.00, "mediana": 6000.00},
+     "urls": ["https://www.buscape.com.br/celular/celular-apple-iphone-17-256gb",
+              "https://www.kabum.com.br/produto/1016330/iphone-17-256gb-preto"]},
+    {"id": "IP17_512", "categoria": "iPhone", "nome": "iPhone 17 512GB",
+     "busca": "iphone 17", "lojas": LOJAS_CELULAR, "excluir": EXCLUIR_CELULAR,
+     "padrao": r"iphone\s?17(?!\d)(?!\s?(pro|air|plus|e\b))(?=.*\b512\s?gb)",
+     "preco_min": 4800, "preco_max": 11000, "alvo": 6100, "ref_6m": None, "urls": []},
+    {"id": "IP17PM_256", "categoria": "iPhone", "nome": "iPhone 17 Pro Max 256GB",
+     "busca": "iphone 17 pro max", "lojas": LOJAS_CELULAR, "excluir": EXCLUIR_CELULAR,
+     "padrao": r"iphone\s?17\s?pro\s?max(?=.*\b256\s?gb)",
+     "preco_min": 6500, "preco_max": 15000, "alvo": 8000,
+     # estimativa: menor histórico ~R$ 8.150 (jul/26); ofertas típicas R$ 8.300–9.500
+     "ref_6m": {"min": 8150.00, "mediana": 8900.00},
+     "urls": ["https://www.buscape.com.br/celular/celular-apple-iphone-17-pro-max-256gb"]},
+    {"id": "IP17PM_512", "categoria": "iPhone", "nome": "iPhone 17 Pro Max 512GB",
+     "busca": "iphone 17 pro max", "lojas": LOJAS_CELULAR, "excluir": EXCLUIR_CELULAR,
+     "padrao": r"iphone\s?17\s?pro\s?max(?=.*\b512\s?gb)",
+     "preco_min": 7500, "preco_max": 17000, "alvo": 9300, "ref_6m": None, "urls": []},
+    {"id": "IP16PM_256", "categoria": "iPhone", "nome": "iPhone 16 Pro Max 256GB",
+     "busca": "iphone 16 pro max", "lojas": LOJAS_CELULAR,
+     "excluir": EXCLUIR_CELULAR + ["usado"],
+     "padrao": r"iphone\s?16\s?pro\s?max(?=.*\b256\s?gb)",
+     "preco_min": 5000, "preco_max": 13000, "alvo": 6800, "ref_6m": None, "urls": []},
+    {"id": "IP16PM_512", "categoria": "iPhone", "nome": "iPhone 16 Pro Max 512GB",
+     "busca": "iphone 16 pro max", "lojas": LOJAS_CELULAR,
+     "excluir": EXCLUIR_CELULAR + ["usado"],
+     "padrao": r"iphone\s?16\s?pro\s?max(?=.*\b512\s?gb)",
+     "preco_min": 5500, "preco_max": 15000, "alvo": 7600, "ref_6m": None, "urls": []},
+
+    # ---------- PERFUME (Carolina Herrera, original; só 80ml e 100ml) ----------
+    {"id": "212VIPROSE_80", "categoria": "Perfume", "nome": "212 VIP Rosé EDP 80ml",
+     "busca": "212 vip rose", "lojas": LOJAS_PERFUME, "excluir": EXCLUIR_PERFUME,
+     "padrao": r"212\s?vip\s?ros[ée](?!\s?elixir)(?=.*\b80\s?ml)",
+     "preco_min": 350, "preco_max": 1300, "alvo": 620, "ref_6m": None,
+     "urls": ["https://www.extrafarma.com.br/212-vip-rose-carolina-herrera-perfume-feminino-edp-80ml-173n86013lh71299/p"]},
+    {"id": "212VIPROSE_100", "categoria": "Perfume", "nome": "212 VIP Rosé EDP 100ml",
+     "busca": "212 vip rose", "lojas": LOJAS_PERFUME, "excluir": EXCLUIR_PERFUME,
+     "padrao": r"212\s?vip\s?ros[ée](?!\s?elixir)(?=.*\b100\s?ml)",
+     "preco_min": 400, "preco_max": 1500, "alvo": 720, "ref_6m": None, "urls": []},
+    {"id": "212VIP_80", "categoria": "Perfume", "nome": "212 VIP Feminino EDP 80ml",
+     "busca": "212 vip feminino", "lojas": LOJAS_PERFUME,
+     "excluir": EXCLUIR_PERFUME + [" men ", "for men", "masculino", "rosé", "rose", "black", "wins", "party"],
+     "padrao": r"212\s?vip(?!\s?(ros|men|black|wins|party|elixir))(?=.*\b80\s?ml)",
+     "preco_min": 300, "preco_max": 1300, "alvo": 550, "ref_6m": None, "urls": []},
+    {"id": "212VIP_100", "categoria": "Perfume", "nome": "212 VIP Feminino EDP 100ml",
+     "busca": "212 vip feminino", "lojas": LOJAS_PERFUME,
+     "excluir": EXCLUIR_PERFUME + [" men ", "for men", "masculino", "rosé", "rose", "black", "wins", "party"],
+     "padrao": r"212\s?vip(?!\s?(ros|men|black|wins|party|elixir))(?=.*\b100\s?ml)",
+     "preco_min": 350, "preco_max": 1500, "alvo": 650, "ref_6m": None, "urls": []},
 ]
 
 INTERVALO_PADRAO_H = 3
@@ -331,8 +401,20 @@ def _fechar_navegador():
     _nav.update(pw=None, browser=None, ok=None)
 
 
+_cache = {}  # páginas já baixadas nesta varredura (zerado a cada rodada)
+
+
 def baixar(url, forcar_navegador=False):
-    """Devolve (html, como). Tenta requests; se bloquear, tenta o navegador."""
+    """Devolve (html, como), reaproveitando páginas já baixadas nesta varredura."""
+    chave = (url, forcar_navegador)
+    if chave not in _cache:
+        _cache[chave] = _baixar(url, forcar_navegador)
+        time.sleep(PAUSA_S)  # pausa só quando acessa o site de verdade
+    return _cache[chave]
+
+
+def _baixar(url, forcar_navegador=False):
+    """Tenta requests; se bloquear, tenta o navegador."""
     status = None
     if not forcar_navegador:
         try:
@@ -390,7 +472,7 @@ def ofertas_busca(html_txt, p, base_url):
             continue
         vistos.add(id(card))
         baixo = texto.lower()
-        if any(x in baixo for x in EXCLUIR) or not padrao.search(baixo):
+        if any(x in baixo for x in EXCLUIR + p.get("excluir", [])) or not padrao.search(baixo):
             continue
         limpo = RE_FAIXA.sub(" ", texto)  # tira filtros tipo "até R$ 2.500"
         limpo = re.sub(r"\d+\s*x\s*(de\s*)?R\$\s*[\d\.,]+", " ", limpo, flags=re.I)  # parcelas
@@ -403,7 +485,8 @@ def ofertas_busca(html_txt, p, base_url):
 
 def fontes(p):
     """Lista (nome_da_loja, url, tipo) de tudo que será varrido para o produto."""
-    out = [(nome, f(p["busca"]), "busca") for nome, f in BUSCAS.items()]
+    lojas = p.get("lojas", LOJAS_ELETRO)
+    out = [(nome, BUSCAS[nome](p["busca"]), "busca") for nome in lojas]
     out += [(loja(u), u, "produto") for u in p["urls"]]
     return out
 
@@ -412,6 +495,7 @@ def fontes(p):
 def coletar():
     con, agora = db(), datetime.now().isoformat(timespec="minutes")
     alertas, ok, falhas = [], 0, 0
+    _cache.clear()
     for p in PRODUTOS:
         minimo, mediana, _, confiavel = base_6m(con, p)  # base ANTES dos preços novos
         print(f"\n  {p['nome']}")
@@ -434,7 +518,6 @@ def coletar():
                 falhas += 1
                 motivo = como if not txt else "modelo não encontrado/sem estoque"
                 print(f"    {nome:14} {'—':>13}  ({motivo})")
-            time.sleep(PAUSA_S)
 
         # descarta leituras muito fora da curva (acessório, filtro, erro de página)
         if len(lidos) >= 3:
@@ -456,6 +539,7 @@ def coletar():
                                                   nome, confiavel)))
         con.commit()
     _fechar_navegador()
+    _cache.clear()
     print(f"\n  {ok} preços lidos, {falhas} fontes sem preço")
     for nivel, msg in sorted(alertas, key=lambda a: -a[0]):  # COMPRE AGORA primeiro
         print("\n" + msg); telegram(msg); ntfy(msg, nivel)
