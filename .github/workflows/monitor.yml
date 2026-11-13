@@ -14,7 +14,7 @@ concurrency:               # nunca roda duas varreduras ao mesmo tempo
 jobs:
   coleta:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     env:
       TZ: America/Sao_Paulo  # horários no fuso de Brasília
     steps:
