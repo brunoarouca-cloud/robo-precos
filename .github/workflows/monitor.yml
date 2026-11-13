@@ -1,0 +1,41 @@
+# Roda o robô na nuvem do GitHub de hora em hora, com o computador desligado.
+# Segredos (Settings > Secrets and variables > Actions): NTFY_TOPICO
+# (opcionais: TELEGRAM_TOKEN e TELEGRAM_CHAT_ID)
+name: Monitor Black Friday
+on:
+  schedule:
+    - cron: "7 * * * *"   # todo início de hora (minuto 7 para fugir do pico do GitHub)
+  workflow_dispatch:       # botão "Run workflow" para rodar na hora
+permissions:
+  contents: write
+concurrency:               # nunca roda duas varreduras ao mesmo tempo
+  group: monitor
+  cancel-in-progress: false
+jobs:
+  coleta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TZ: America/Sao_Paulo  # horários no fuso de Brasília
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependências
+        run: |
+          pip install requests beautifulsoup4 playwright
+          python -m playwright install --with-deps chromium
+      - name: Varredura de preços
+        run: python robo_precos.py
+        env:
+          NTFY_TOPICO: ${{ secrets.NTFY_TOPICO }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Salvar histórico e relatório no repositório
+        run: |
+          git config user.name "robo-precos"
+          git config user.email "robo-precos@users.noreply.github.com"
+          git add historico_precos.db relatorio.html
+          git commit -m "varredura $(date '+%d/%m %H:%M')" || exit 0
+          git pull --rebase -X ours && git push
