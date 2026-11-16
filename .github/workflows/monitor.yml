@@ -3,8 +3,6 @@
 # (opcionais: TELEGRAM_TOKEN e TELEGRAM_CHAT_ID)
 name: Monitor Black Friday
 on:
-  schedule:
-    - cron: "7 * * * *"   # todo início de hora (minuto 7 para fugir do pico do GitHub)
   workflow_dispatch:       # botão "Run workflow" para rodar na hora
 permissions:
   contents: write
