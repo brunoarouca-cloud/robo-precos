@@ -178,26 +178,6 @@ PRODUTOS = [
      "padrao": r"iphone\s?16\s?pro\s?max(?=.*\b512\s?gb)",
      "preco_min": 5500, "preco_max": 15000, "alvo": 7600, "ref_6m": None, "urls": []},
 
-    # ---------- PERFUME (Carolina Herrera, original; só 80ml e 100ml) ----------
-    {"id": "212VIPROSE_80", "categoria": "Perfume", "nome": "212 VIP Rosé EDP 80ml",
-     "busca": "212 vip rose", "lojas": LOJAS_PERFUME, "excluir": EXCLUIR_PERFUME,
-     "padrao": r"212\s?vip\s?ros[ée](?!\s?elixir)(?=.*\b80\s?ml)",
-     "preco_min": 350, "preco_max": 1300, "alvo": 620, "ref_6m": None,
-     "urls": ["https://www.extrafarma.com.br/212-vip-rose-carolina-herrera-perfume-feminino-edp-80ml-173n86013lh71299/p"]},
-    {"id": "212VIPROSE_100", "categoria": "Perfume", "nome": "212 VIP Rosé EDP 100ml",
-     "busca": "212 vip rose", "lojas": LOJAS_PERFUME, "excluir": EXCLUIR_PERFUME,
-     "padrao": r"212\s?vip\s?ros[ée](?!\s?elixir)(?=.*\b100\s?ml)",
-     "preco_min": 400, "preco_max": 1500, "alvo": 720, "ref_6m": None, "urls": []},
-    {"id": "212VIP_80", "categoria": "Perfume", "nome": "212 VIP Feminino EDP 80ml",
-     "busca": "212 vip feminino", "lojas": LOJAS_PERFUME,
-     "excluir": EXCLUIR_PERFUME + [" men ", "for men", "masculino", "rosé", "rose", "black", "wins", "party"],
-     "padrao": r"212\s?vip(?!\s?(ros|men|black|wins|party|elixir))(?=.*\b80\s?ml)",
-     "preco_min": 300, "preco_max": 1300, "alvo": 550, "ref_6m": None, "urls": []},
-    {"id": "212VIP_100", "categoria": "Perfume", "nome": "212 VIP Feminino EDP 100ml",
-     "busca": "212 vip feminino", "lojas": LOJAS_PERFUME,
-     "excluir": EXCLUIR_PERFUME + [" men ", "for men", "masculino", "rosé", "rose", "black", "wins", "party"],
-     "padrao": r"212\s?vip(?!\s?(ros|men|black|wins|party|elixir))(?=.*\b100\s?ml)",
-     "preco_min": 350, "preco_max": 1500, "alvo": 650, "ref_6m": None, "urls": []},
 ]
 
 INTERVALO_PADRAO_H = 3
