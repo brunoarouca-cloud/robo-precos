@@ -101,12 +101,12 @@ PRODUTOS = [
 
     # ---------- ROBÔ ASPIRADOR ----------
     {"id": "S40", "categoria": "Robô aspirador", "nome": "Xiaomi Robot Vacuum S40 (recomendado)",
-     "busca": "xiaomi robot vacuum s40", "padrao": r"\bs40(?!\s?(pro|c\b|e\b|ultra|max))",
+     "busca": "xiaomi robot vacuum s40", "lojas": LOJAS_CELULAR, "padrao": r"\bs40(?!\s?(pro|c\b|e\b|ultra|max))",
      "preco_min": 800, "preco_max": 3000, "alvo": 1100,
      "ref_6m": None,  # ex.: {"min": 1150.00, "mediana": 1450.00}
      "urls": ["https://www.kabum.com.br/produto/1047130"]},
     {"id": "S40PRO", "categoria": "Robô aspirador", "nome": "Xiaomi Robot Vacuum S40 Pro",
-     "busca": "xiaomi robot vacuum s40 pro", "padrao": r"\bs40\s?pro",
+     "busca": "xiaomi robot vacuum s40 pro", "lojas": LOJAS_CELULAR, "padrao": r"\bs40\s?pro",
      "preco_min": 1400, "preco_max": 5000, "alvo": 1900, "ref_6m": None,
      "urls": [
         "https://www.kabum.com.br/produto/1003959/robo-aspiador-xiaomi-robot-vacuum-s40-pro-gb",
@@ -148,6 +148,7 @@ COMPRE_AGORA_DESCONTO = 0.15 # 15% abaixo da mediana de 6 meses + abaixo do mín
 HIST_MIN_COLETAS = 20        # histórico próprio só vale como base de 6 meses com
 HIST_MIN_DIAS = 3            # pelo menos 20 leituras ao longo de 3+ dias (ou ref_6m preenchido)
 SUSPEITO = 0.55              # preço < 55% da mediana das outras lojas = leitura suspeita, descarta
+TABELA = 1.5                 # preço > 1,5x a mediana das lojas = preço de tabela/marketplace, ignora
 PAUSA_S = 1.5                # intervalo entre acessos (educação com os sites)
 USAR_NAVEGADOR = True        # usa Playwright, se instalado, quando um site bloquear
 DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "historico_precos.db")
@@ -235,18 +236,19 @@ def db():
 
 
 def base_6m(con, p):
-    """Mínimo e mediana dos últimos 6 meses + se a base é confiável."""
+    """Mínimo e mediana dos últimos 6 meses, usando o MELHOR preço de cada varredura
+    (assim preços de tabela de uma loja não inflam a mediana) + se a base é confiável."""
     corte = (datetime.now() - timedelta(days=JANELA_DIAS)).isoformat()
-    linhas = con.execute("SELECT preco, ts FROM precos WHERE produto=? AND ts>=?",
-                         (p["id"], corte)).fetchall()
-    hist = [r[0] for r in linhas]
-    dias = len({r[1][:10] for r in linhas})
+    linhas = con.execute("""SELECT ts, MIN(preco) FROM precos WHERE produto=? AND ts>=?
+                            GROUP BY ts""", (p["id"], corte)).fetchall()
+    hist = [r[1] for r in linhas]
+    dias = len({r[0][:10] for r in linhas})
     ref = p.get("ref_6m") or {}
     proprio_ok = len(hist) >= HIST_MIN_COLETAS and dias >= HIST_MIN_DIAS
     mins = [v for v in (min(hist) if hist else None, ref.get("min")) if v]
     minimo = min(mins) if mins else None
     if proprio_ok or (hist and not ref.get("mediana")):
-        mediana, fonte = statistics.median(hist), f"{len(hist)} leituras em {dias} dia(s)"
+        mediana, fonte = statistics.median(hist), f"{len(hist)} varreduras em {dias} dia(s)"
     else:
         mediana, fonte = ref.get("mediana"), "referência manual"
     confiavel = proprio_ok or bool(ref.get("mediana") and ref.get("min"))
@@ -433,7 +435,155 @@ def ofertas_busca(html_txt, p, base_url):
         vals = [v for v in vals if v and p["preco_min"] < v <= p["preco_max"]]
         if vals:
             achados.append((min(vals), href))
+    if achados:
+        return min(achados)
+    return ofertas_json(soup, p, base_url)
+
+
+CHAVES_TITULO = {"title", "name", "text", "productname", "nome", "titulo", "displayname"}
+CHAVES_PRECO = {"price", "bestprice", "value", "amount", "saleprice", "pricevalue",
+                "sellingprice", "currentprice", "current_price", "pixprice", "finalprice"}
+CHAVES_URL = {"url", "permalink", "path", "link", "href", "producturl", "canonical"}
+BLOQUEIO = ["captcha", "account-verification", "are you a robot", "não sou um robô",
+            "verifique que você", "access denied", "acesso negado", "px-captcha",
+            "request unsuccessful", "unusual traffic"]
+
+
+def _jsons_da_pagina(soup):
+    """Dados que a loja embute na página (__NEXT_DATA__, estado inicial, ld+json...)."""
+    for tag in soup.find_all("script"):
+        txt = (tag.string or tag.get_text() or "").strip()
+        if len(txt) < 50 or "{" not in txt:
+            continue
+        ini = txt.find("{") if not txt.startswith("[") else 0
+        fim = max(txt.rfind("}"), txt.rfind("]")) + 1
+        try:
+            yield json.loads(txt[ini:fim])
+        except Exception:
+            continue
+
+
+def _precos_em(o, p, prof=0):
+    out = []
+    if prof > 4:
+        return out
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k.lower() in CHAVES_PRECO and isinstance(v, (int, float, str)) and not isinstance(v, bool):
+                x = brl(v)
+                if x and p["preco_min"] < x <= p["preco_max"]:
+                    out.append(x)
+            elif isinstance(v, (dict, list)):
+                out += _precos_em(v, p, prof + 1)
+    elif isinstance(o, list):
+        for v in o[:30]:
+            out += _precos_em(v, p, prof + 1)
+    return out
+
+
+def _url_em(o, prof=0):
+    if prof > 4:
+        return None
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if (k.lower() in CHAVES_URL and isinstance(v, str) and len(v) > 8
+                    and " " not in v and not RE_IMAGEM.search(v)):
+                return v
+        for v in o.values():
+            if isinstance(v, (dict, list)):
+                u = _url_em(v, prof + 1)
+                if u:
+                    return u
+    elif isinstance(o, list):
+        for v in o[:30]:
+            u = _url_em(v, prof + 1)
+            if u:
+                return u
+    return None
+
+
+RE_IMAGEM = re.compile(r"\.(jpe?g|png|webp|gif|svg|avif)(\?|$)|mlstatic|/images?/|/img/", re.I)
+
+
+def _links_em(o, prof=0, achados=None):
+    """Links de produto distintos dentro de um bloco (ignora imagens)."""
+    achados = set() if achados is None else achados
+    if prof > 6 or len(achados) > 1:
+        return achados
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if (k.lower() in CHAVES_URL and isinstance(v, str) and len(v) > 8
+                    and " " not in v and not RE_IMAGEM.search(v)):
+                achados.add(v.split("?")[0].rstrip("/"))
+            elif isinstance(v, (dict, list)):
+                _links_em(v, prof + 1, achados)
+    elif isinstance(o, list):
+        for v in o:
+            if isinstance(v, (dict, list)):
+                _links_em(v, prof + 1, achados)
+    return achados
+
+
+def ofertas_json(soup, p, base_url):
+    """Acha anúncios do modelo nos dados JSON da página (Magalu, Mercado Livre...)."""
+    padrao = re.compile(p["padrao"], re.I)
+    excluir = EXCLUIR + p.get("excluir", [])
+    achados = []
+
+    def andar(o, pais):
+        if isinstance(o, dict):
+            titulo = next((v for k, v in o.items() if isinstance(v, str)
+                           and k.lower() in CHAVES_TITULO and padrao.search(v)), None)
+            if titulo and not any(x in titulo.lower() for x in excluir):
+                # sobe do título até o bloco do anúncio que tem preço (sem pegar a lista toda)
+                for anc in [o] + pais[::-1][:5]:
+                    # para ao chegar num bloco com mais de um anúncio (lista de resultados)
+                    if len(json.dumps(anc, ensure_ascii=False)) > 8000 or len(_links_em(anc)) > 1:
+                        break
+                    precos = _precos_em(anc, p)
+                    if precos:
+                        cadeia = [o] + pais[::-1][:8]
+                        pos = next(i for i, a in enumerate(cadeia) if a is anc)
+                        u = None
+                        for a2 in cadeia[pos:pos + 4]:  # link pode estar um nível acima
+                            if len(json.dumps(a2, ensure_ascii=False)) > 8000 or len(_links_em(a2)) > 1:
+                                break
+                            u = _url_em(a2)
+                            if u:
+                                break
+                        if u and u.startswith("www."):
+                            u = "https://" + u
+                        href = urljoin(base_url, u) if u else None
+                        if href and not RE_BUSCA.search(href):
+                            achados.append((min(precos), href))
+                        break
+            for v in o.values():
+                if isinstance(v, (dict, list)):
+                    andar(v, pais + [o])
+        elif isinstance(o, list):
+            for v in o:
+                if isinstance(v, (dict, list)):
+                    andar(v, pais + [o])
+
+    for dados in _jsons_da_pagina(soup):
+        try:
+            andar(dados, [])
+        except RecursionError:
+            continue
     return min(achados) if achados else (None, None)
+
+
+def diagnostico(html_txt, p):
+    """Explica, no log, por que uma página de busca não deu preço."""
+    baixo = html_txt.lower()
+    if any(b in baixo for b in BLOQUEIO):
+        return "bloqueado (verificação anti-robô)"
+    soup = BeautifulSoup(html_txt, "html.parser")
+    titulo = (soup.title.get_text(" ", strip=True) if soup.title else "")[:40]
+    tem = re.search(p["padrao"], html_txt, re.I) is not None
+    if tem:
+        return f"modelo aparece, preço não lido · {len(html_txt)//1000}KB · '{titulo}'"
+    return f"sem anúncio do modelo · {len(html_txt)//1000}KB · '{titulo}'"
 
 
 def fontes(p):
@@ -469,16 +619,32 @@ def coletar():
                 lidos.append((nome, link, preco, como))
             else:
                 falhas += 1
-                motivo = como if not txt else "modelo não encontrado/sem estoque"
+                if not txt:
+                    motivo = como
+                elif tipo == "busca":
+                    motivo = diagnostico(txt, p)
+                else:
+                    motivo = "sem preço na página (sem estoque?)"
                 print(f"    {nome:14} {'—':>13}  ({motivo})")
 
-        # descarta leituras muito fora da curva (acessório, filtro, erro de página)
+        # uma leitura por loja (busca + página de produto da mesma loja contam uma vez)
+        por_loja = {}
+        for x in lidos:
+            if x[0] not in por_loja or x[2] < por_loja[x[0]][2]:
+                por_loja[x[0]] = x
+        lidos = list(por_loja.values())
+
+        # descarta leituras fora da curva
         if len(lidos) >= 3:
             med_rodada = statistics.median(x[2] for x in lidos)
             for x in [x for x in lidos if x[2] < med_rodada * SUSPEITO]:
                 print(f"    {x[0]:14} {reais(x[2]):>13}  (descartado: suspeito, mediana "
                       f"das lojas {reais(med_rodada)})")
                 lidos.remove(x); falhas += 1
+            for x in [x for x in lidos if x[2] > med_rodada * TABELA]:
+                print(f"    {x[0]:14} {reais(x[2]):>13}  (ignorado: preço de tabela/"
+                      f"marketplace, mediana das lojas {reais(med_rodada)})")
+                lidos.remove(x)
 
         for nome, link, preco, como in lidos:
             ok += 1
