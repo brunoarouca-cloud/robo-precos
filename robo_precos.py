@@ -99,34 +99,6 @@ PRODUTOS = [
      "preco_min": 2500, "preco_max": 9000, "alvo": 4000, "ref_6m": None,
      "urls": ["https://www.buscape.com.br/lava-loucas/lava-loucas-14-servicos-electrolux-lv14x-inox"]},
 
-    # ---------- LAVA-LOUÇAS ELECTROLUX 10 SERVIÇOS ----------
-    # Todos usam a mesma busca ("electrolux lava loucas 10 servicos"), baixada uma vez por loja.
-    {"id": "LL10X", "categoria": "Lava-louças", "nome": "Electrolux LL10X Inox (10 serviços)",
-     "busca": "electrolux lava loucas 10 servicos", "padrao": r"\bll10x\b",
-     "preco_min": 2000, "preco_max": 6000, "alvo": 3000, "ref_6m": None,
-     "urls": ["https://www.buscape.com.br/lava-loucas/lava-loucas-10-servicos-electrolux-ll10x-inox",
-              "https://www.casasbahia.com.br/lava-loucas-electrolux-inox-com-10-servicos-07-programas-de-lavagem-e-funcao-higienizar-compras-ll10x/p/1516418128"]},
-    {"id": "LL10B", "categoria": "Lava-louças", "nome": "Electrolux LL10B Branca (10 serviços)",
-     "busca": "electrolux lava loucas 10 servicos", "padrao": r"\bll10b\b",
-     "preco_min": 2000, "preco_max": 6000, "alvo": 2900, "ref_6m": None,
-     "urls": ["https://www.zoom.com.br/lava-loucas/lava-loucas-electrolux-ll10b-10-servicos"]},
-    {"id": "LS10E", "categoria": "Lava-louças", "nome": "Electrolux LS10E Inox Lava & Seca (10 serviços)",
-     "busca": "electrolux lava loucas 10 servicos", "padrao": r"\bls10e\b",
-     "preco_min": 1800, "preco_max": 5500, "alvo": 2600, "ref_6m": None, "urls": []},
-    {"id": "LP10E", "categoria": "Lava-louças", "nome": "Electrolux LP10E Preta Lava & Seca (10 serviços)",
-     "busca": "electrolux lava loucas 10 servicos", "padrao": r"\blp10e\b",
-     "preco_min": 1800, "preco_max": 5500, "alvo": 2500, "ref_6m": None, "urls": []},
-    {"id": "LB10E", "categoria": "Lava-louças", "nome": "Electrolux LB10E Branca Lava & Seca (10 serviços)",
-     "busca": "electrolux lava loucas 10 servicos", "padrao": r"\blb10e\b",
-     "preco_min": 1800, "preco_max": 5500, "alvo": 2500, "ref_6m": None, "urls": []},
-    {"id": "LV10X", "categoria": "Lava-louças", "nome": "Electrolux LV10X Inox (10 serviços)",
-     "busca": "electrolux lava loucas 10 servicos", "padrao": r"\blv10x\b",
-     "preco_min": 1800, "preco_max": 5500, "alvo": 2700, "ref_6m": None,
-     "urls": ["https://www.zoom.com.br/lava-loucas/lava-loucas-10-servicos-electrolux-lv10x"]},
-    {"id": "LV10B", "categoria": "Lava-louças", "nome": "Electrolux LV10B Branca (10 serviços)",
-     "busca": "electrolux lava loucas 10 servicos", "padrao": r"\blv10b\b",
-     "preco_min": 1800, "preco_max": 5500, "alvo": 2600, "ref_6m": None, "urls": []},
-
     # ---------- ROBÔ ASPIRADOR ----------
     {"id": "S40", "categoria": "Robô aspirador", "nome": "Xiaomi Robot Vacuum S40 (recomendado)",
      "busca": "xiaomi robot vacuum s40", "padrao": r"\bs40(?!\s?(pro|c\b|e\b|ultra|max))",
@@ -163,21 +135,11 @@ PRODUTOS = [
      # estimativa: menor histórico ~R$ 8.150 (jul/26); ofertas típicas R$ 8.300–9.500
      "ref_6m": {"min": 8150.00, "mediana": 8900.00},
      "urls": ["https://www.buscape.com.br/celular/celular-apple-iphone-17-pro-max-256gb"]},
-    {"id": "IP17PM_512", "categoria": "iPhone", "nome": "iPhone 17 Pro Max 512GB",
-     "busca": "iphone 17 pro max", "lojas": LOJAS_CELULAR, "excluir": EXCLUIR_CELULAR,
-     "padrao": r"iphone\s?17\s?pro\s?max(?=.*\b512\s?gb)",
-     "preco_min": 7500, "preco_max": 17000, "alvo": 9300, "ref_6m": None, "urls": []},
     {"id": "IP16PM_256", "categoria": "iPhone", "nome": "iPhone 16 Pro Max 256GB",
      "busca": "iphone 16 pro max", "lojas": LOJAS_CELULAR,
      "excluir": EXCLUIR_CELULAR + ["usado"],
      "padrao": r"iphone\s?16\s?pro\s?max(?=.*\b256\s?gb)",
      "preco_min": 5000, "preco_max": 13000, "alvo": 6800, "ref_6m": None, "urls": []},
-    {"id": "IP16PM_512", "categoria": "iPhone", "nome": "iPhone 16 Pro Max 512GB",
-     "busca": "iphone 16 pro max", "lojas": LOJAS_CELULAR,
-     "excluir": EXCLUIR_CELULAR + ["usado"],
-     "padrao": r"iphone\s?16\s?pro\s?max(?=.*\b512\s?gb)",
-     "preco_min": 5500, "preco_max": 15000, "alvo": 7600, "ref_6m": None, "urls": []},
-
 ]
 
 INTERVALO_PADRAO_H = 3
