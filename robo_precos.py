@@ -142,6 +142,25 @@ PRODUTOS = [
      "preco_min": 5000, "preco_max": 13000, "alvo": 6800, "ref_6m": None, "urls": []},
 ]
 
+
+# ===================== PASSAGENS AÉREAS =====================
+# Consulta o Google Flights pelo SerpApi (plano grátis: 250 buscas/mês, sem cartão).
+# Crie a chave em serpapi.com e cadastre como segredo SERPAPI_KEY no GitHub.
+# Cada linha abaixo = 1 busca por consulta. Preço = ida e volta, por adulto, em reais.
+# alvo: None = usa o limite de baixo da "faixa típica" que o próprio Google calcula.
+VOO_BASE = {"categoria": "Passagem aérea", "origem": "GIG,SDU", "destino": "SSA",
+            "ida": "2027-01-31", "adultos": 1, "alvo": None}
+VOOS = [
+    dict(VOO_BASE, id="VOO_SSA_0902", volta="2027-02-09",
+         nome="Rio (GIG/SDU) ⇄ Salvador · ida 31/01 · volta 09/02/27"),
+    dict(VOO_BASE, id="VOO_SSA_1002", volta="2027-02-10",
+         nome="Rio (GIG/SDU) ⇄ Salvador · ida 31/01 · volta 10/02/27"),
+    dict(VOO_BASE, id="VOO_SSA_1102", volta="2027-02-11",
+         nome="Rio (GIG/SDU) ⇄ Salvador · ida 31/01 · volta 11/02/27"),
+]
+VOOS_INTERVALO_H = 12   # consulta voos a cada 12h (3 buscas x 2/dia ≈ 180/mês, dentro do grátis)
+VOOS_LIMITE_MES = 230   # trava de segurança: nunca passa disso no mês
+
 INTERVALO_PADRAO_H = 3
 JANELA_DIAS = 180            # compara com os últimos 6 meses
 COMPRE_AGORA_DESCONTO = 0.15 # 15% abaixo da mediana de 6 meses + abaixo do mínimo de 6 meses
@@ -232,6 +251,9 @@ def db():
         ts TEXT, produto TEXT, loja TEXT, url TEXT, preco REAL)""")
     con.execute("""CREATE TABLE IF NOT EXISTS alertas(
         ts TEXT, produto TEXT, url TEXT, nivel INTEGER, preco REAL)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS voos_info(
+        ts TEXT, produto TEXT, tipico_min REAL, tipico_max REAL, hist_min REAL, nivel TEXT)""")
+    con.execute("CREATE TABLE IF NOT EXISTS voos_uso(ts TEXT, produto TEXT)")
     return con
 
 
@@ -595,6 +617,132 @@ def fontes(p):
 
 
 # ------------------ varredura ------------------
+# ------------------ passagens aéreas (Google Flights via SerpApi) ------------------
+NIVEL_PT = {"low": "baixo", "typical": "típico", "high": "alto"}
+
+
+def info_voo(con, p):
+    """Última 'faixa típica' e histórico que o Google informou para essa busca."""
+    return con.execute("""SELECT tipico_min, tipico_max, hist_min, nivel FROM voos_info
+                          WHERE produto=? ORDER BY ts DESC LIMIT 1""", (p["id"],)).fetchone()
+
+
+def alvo_de(con, p):
+    if p.get("alvo"):
+        return p["alvo"]
+    inf = info_voo(con, p) if p in VOOS else None
+    return inf[0] if inf and inf[0] else None
+
+
+def base_item(con, p):
+    """Base de comparação: para voos, junta o histórico do robô com o do Google."""
+    minimo, mediana, fonte, confiavel = base_6m(con, p)
+    if p in VOOS:
+        inf = info_voo(con, p)
+        if inf and inf[0] and inf[1]:
+            mediana = (inf[0] + inf[1]) / 2
+            fonte, confiavel = f"faixa típica do Google {reais(inf[0], 0)}–{reais(inf[1], 0)}", True
+        if inf and inf[2]:
+            minimo = min(x for x in (minimo, inf[2]) if x)
+    return minimo, mediana, fonte, confiavel
+
+
+def _uso_voos(con):
+    mes = datetime.now().strftime("%Y-%m")
+    usados = con.execute("SELECT COUNT(*) FROM voos_uso WHERE ts LIKE ?", (mes + "%",)).fetchone()[0]
+    ultimo = con.execute("SELECT MAX(ts) FROM voos_uso").fetchone()[0]
+    return usados, ultimo
+
+
+def buscar_voo(p, chave):
+    """Uma busca de ida e volta. Devolve dict com o voo mais barato + insights do Google."""
+    r = requests.get("https://serpapi.com/search.json", timeout=60, params={
+        "engine": "google_flights", "api_key": chave, "type": 1,
+        "departure_id": p["origem"], "arrival_id": p["destino"],
+        "outbound_date": p["ida"], "return_date": p["volta"],
+        "adults": p.get("adultos", 1), "currency": "BRL", "hl": "pt", "gl": "br"})
+    d = r.json()
+    if d.get("error"):
+        raise RuntimeError(d["error"])
+    opcoes = [o for o in d.get("best_flights", []) + d.get("other_flights", []) if o.get("price")]
+    ins = d.get("price_insights", {}) or {}
+    hist = [x[1] for x in ins.get("price_history", []) if isinstance(x, list) and len(x) > 1]
+    faixa = ins.get("typical_price_range") or [None, None]
+    link = (d.get("search_metadata") or {}).get("google_flights_url") or "https://www.google.com/travel/flights"
+    if not opcoes:
+        return {"preco": None, "faixa": faixa, "hist_min": min(hist) if hist else None,
+                "nivel": ins.get("price_level"), "link": link}
+    o = min(opcoes, key=lambda x: x["price"])
+    trechos = o.get("flights", [])
+    cias = sorted({t.get("airline", "?") for t in trechos})
+    paradas = len(trechos) - 1
+    saida = trechos[0].get("departure_airport", {}) if trechos else {}
+    hora = (saida.get("time") or "")[-5:]
+    desc = (f"{'/'.join(cias)} · {'direto' if paradas == 0 else f'{paradas} parada(s)'} · "
+            f"sai do {saida.get('id', '?')} {hora}")
+    return {"preco": float(o["price"]), "desc": desc, "faixa": faixa, "link": link,
+            "hist_min": min(hist) if hist else None, "nivel": ins.get("price_level")}
+
+
+def coletar_voos(con, agora, alertas):
+    """Consulta os voos respeitando o intervalo e o limite mensal do plano grátis."""
+    if not VOOS:
+        return 0
+    chave = os.getenv("SERPAPI_KEY")
+    print("\n  ✈️  Passagens aéreas")
+    if not chave:
+        print("    (pulando: cadastre o segredo SERPAPI_KEY para monitorar voos)")
+        return 0
+    ativos = [v for v in VOOS if v["ida"] >= datetime.now().strftime("%Y-%m-%d")]
+    usados, ultimo = _uso_voos(con)
+    if ultimo and datetime.fromisoformat(ultimo) > datetime.now() - timedelta(hours=VOOS_INTERVALO_H):
+        prox = datetime.fromisoformat(ultimo) + timedelta(hours=VOOS_INTERVALO_H)
+        print(f"    próxima consulta de voos às {prox:%d/%m %H:%M} "
+              f"({usados}/{VOOS_LIMITE_MES} buscas usadas no mês)")
+        return 0
+    if usados + len(ativos) > VOOS_LIMITE_MES:
+        print(f"    limite do mês atingido ({usados}/{VOOS_LIMITE_MES}); volta no dia 1º")
+        return 0
+    ok = 0
+    for p in ativos:
+        try:
+            v = buscar_voo(p, chave)
+        except Exception as e:
+            print(f"    {p['nome'][-18:]:18} erro: {e}")
+            continue
+        finally:
+            con.execute("INSERT INTO voos_uso VALUES(?,?)", (agora, p["id"]))
+        f0, f1 = (v["faixa"] + [None, None])[:2]
+        con.execute("INSERT INTO voos_info VALUES(?,?,?,?,?,?)",
+                    (agora, p["id"], f0, f1, v["hist_min"], v["nivel"]))
+        if not v["preco"]:
+            print(f"    {p['nome'][-18:]:18} sem voos encontrados")
+            continue
+        minimo, mediana, _, confiavel = base_item(con, p)  # já com a faixa nova do Google
+        ok += 1
+        nivel_g = NIVEL_PT.get(v["nivel"], "?")
+        print(f"    volta {p['volta'][8:]}/{p['volta'][5:7]}  {reais(v['preco']):>12}  "
+              f"{v['desc']} · Google: preço {nivel_g}")
+        con.execute("INSERT INTO precos VALUES(?,?,?,?,?)",
+                    (agora, p["id"], v["desc"], v["link"], v["preco"]))
+        p_ef = dict(p, alvo=alvo_de(con, p) or v["preco"] * 0.85)
+        nivel = classificar(p_ef, v["preco"], minimo, mediana, confiavel)
+        if nivel and deve_avisar(con, p, v["link"], nivel, v["preco"]):
+            con.execute("INSERT INTO alertas VALUES(?,?,?,?,?)",
+                        (agora, p["id"], v["link"], nivel, v["preco"]))
+            msg = montar_msg(p_ef, nivel, v["preco"], v["link"], minimo, mediana,
+                             v["desc"], confiavel)
+            msg = msg.replace(f"\n{v['link']}", f"\nGoogle Flights: preço {nivel_g} para a data\n{v['link']}")
+            msg = (msg.replace("da mediana de 6 meses", "do preço típico (Google)")
+                      .replace("Menor preço em 6 meses", "Menor preço já registrado")
+                      .replace(": R$", "\nR$", 1).replace(" na ", " · ", 1))
+            alertas.append((nivel, msg))
+    con.commit()
+    usados, _ = _uso_voos(con)
+    print(f"    ({usados}/{VOOS_LIMITE_MES} buscas de voo usadas no mês)")
+    return ok
+
+
 def coletar():
     con, agora = db(), datetime.now().isoformat(timespec="minutes")
     alertas, ok, falhas = [], 0, 0
@@ -659,6 +807,7 @@ def coletar():
         con.commit()
     _fechar_navegador()
     _cache.clear()
+    ok += coletar_voos(con, agora, alertas)
     print(f"\n  {ok} preços lidos, {falhas} fontes sem preço")
     for nivel, msg in sorted(alertas, key=lambda a: -a[0]):  # COMPRE AGORA primeiro
         print("\n" + msg); telegram(msg); ntfy(msg, nivel)
@@ -676,12 +825,16 @@ def gerar_relatorio(con, rodada=None):
     @media(prefers-color-scheme:dark){body{background:#151515;color:#eee}summary{color:#aaa}
     td,th{border-color:#333}a{color:#8ab4f8}.ok{color:#5dd47f}}"""
     h = [f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
-         f"<title>Monitor Black Friday</title><style>{css}</style></head><body>",
-         f"<h1>Monitor Black Friday</h1><p>Última varredura: {rodada.replace('T', ' ')}</p>"]
+         f"<title>Monitor de preços</title><style>{css}</style></head><body>",
+         f"<h1>Monitor de preços</h1><p>Última varredura: {rodada.replace('T', ' ')}</p>"]
     cat_atual = None
-    for p in PRODUTOS:
+    for p in PRODUTOS + VOOS:
+        ts_item = rodada
+        if p in VOOS:  # voos são consultados a cada 12h: mostra a última consulta
+            ts_item = con.execute("SELECT MAX(ts) FROM precos WHERE produto=?",
+                                  (p["id"],)).fetchone()[0] or ""
         lojas = con.execute("""SELECT loja,url,preco FROM precos WHERE produto=? AND ts=?
-                               ORDER BY preco""", (p["id"], rodada)).fetchall()
+                               ORDER BY preco""", (p["id"], ts_item)).fetchall()
         if p["categoria"] != cat_atual:
             if cat_atual:
                 h.append("</div>")
@@ -691,7 +844,8 @@ def gerar_relatorio(con, rodada=None):
             h.append(f"<p>{html.escape(p['nome'])}: sem preço nesta varredura</p>")
             continue
         loja_, url, atual = lojas[0]
-        minimo, mediana, fonte, confiavel = base_6m(con, p)
+        minimo, mediana, fonte, confiavel = base_item(con, p)
+        alvo = alvo_de(con, p) or atual
         mn, med = minimo or atual, mediana or atual
         var = (atual / med - 1) * 100
         # o mínimo de 6m já inclui o preço atual: "igual ao mínimo" = é o novo mínimo
@@ -699,8 +853,8 @@ def gerar_relatorio(con, rodada=None):
         selo = " <span class='ca'>COMPRE AGORA</span>" if excepcional else ""
         h.append("<table><tr><th>Modelo</th><th>Melhor agora</th><th>Mín. 6 meses</th>"
                  "<th>vs. mediana 6m</th></tr>")
-        h.append(f"<tr><td><b>{html.escape(p['nome'])}</b>{selo}<br><small>alvo {reais(p['alvo'], 0)}</small></td>"
-                 f"<td class='{'ok' if atual <= p['alvo'] else ''}'><a href='{url}'>{reais(atual)}</a> · {loja_}</td>"
+        h.append(f"<tr><td><b>{html.escape(p['nome'])}</b>{selo}<br><small>alvo {reais(alvo, 0)}{' (faixa típica do Google)' if p in VOOS and not p.get('alvo') else ''}{' · consultado ' + ts_item[8:10] + '/' + ts_item[5:7] + ' ' + ts_item[11:16] if p in VOOS else ''}</small></td>"
+                 f"<td class='{'ok' if atual <= alvo else ''}'><a href='{url}'>{reais(atual)}</a> · {loja_}</td>"
                  f"<td>{reais(mn)}</td>"
                  f"<td class='{'ok' if var < -3 else 'bad' if var > 3 else ''}'>{var:+.1f}%"
                  f"<br><small>base: {fonte}</small></td></tr></table>")
