@@ -161,6 +161,8 @@ VOOS = [
 VOOS_INTERVALO_H = 12   # consulta voos a cada 12h (3 buscas x 2/dia ≈ 180/mês, dentro do grátis)
 VOOS_LIMITE_MES = 230   # trava de segurança: nunca passa disso no mês
 
+RESUMO_HORA = 9         # resumo diário a partir das 9h (chega na 1ª varredura depois desse horário)
+
 INTERVALO_PADRAO_H = 3
 JANELA_DIAS = 180            # compara com os últimos 6 meses
 COMPRE_AGORA_DESCONTO = 0.15 # 15% abaixo da mediana de 6 meses + abaixo do mínimo de 6 meses
@@ -254,6 +256,7 @@ def db():
     con.execute("""CREATE TABLE IF NOT EXISTS voos_info(
         ts TEXT, produto TEXT, tipico_min REAL, tipico_max REAL, hist_min REAL, nivel TEXT)""")
     con.execute("CREATE TABLE IF NOT EXISTS voos_uso(ts TEXT, produto TEXT)")
+    con.execute("CREATE TABLE IF NOT EXISTS resumos(data TEXT, ts TEXT)")
     return con
 
 
@@ -311,7 +314,8 @@ def ntfy(msg, nivel=2):
     if not topico:
         return
     url = next((l for l in msg.splitlines() if l.startswith("http")), None)
-    estilo = {3: ("🚨 COMPRE AGORA", 5, ["rotating_light", "moneybag"]),
+    estilo = {0: ("📊 Resumo diário de preços", 3, ["bar_chart"]),
+              3: ("🚨 COMPRE AGORA", 5, ["rotating_light", "moneybag"]),
               2: ("🎯 Preço-alvo atingido", 4, ["dart"]),
               1: ("📉 Novo mínimo", 3, ["chart_with_downwards_trend"])}[nivel]
     corpo = {"topic": topico, "title": estilo[0], "message": msg,
@@ -320,9 +324,15 @@ def ntfy(msg, nivel=2):
         corpo["click"] = url  # tocar na notificação abre a loja
         corpo["actions"] = [{"action": "view", "label": "Abrir oferta", "url": url}]
     try:
-        requests.post("https://ntfy.sh/", json=corpo, timeout=15)
+        r = requests.post("https://ntfy.sh/", json=corpo, timeout=15)
+        if r.status_code >= 400:
+            print(f"  ! ntfy recusou a mensagem (HTTP {r.status_code}): {r.text[:200]}")
+        else:
+            print(f"  ✓ notificação enviada ao ntfy: {estilo[0]}")
+        return r.status_code < 400
     except Exception as e:
         print("  ! falha no ntfy:", e)
+        return False
 
 
 def telegram(msg):
@@ -743,6 +753,73 @@ def coletar_voos(con, agora, alertas):
     return ok
 
 
+# ------------------ resumo diário ------------------
+def _curto(p):
+    if p in VOOS:
+        return f"Volta {p['volta'][8:]}/{p['volta'][5:7]}"
+    n = p["nome"].split(" (")[0]
+    for a, b in (("Electrolux ", ""), ("Xiaomi Robot Vacuum ", "Xiaomi "), ("Lava & Seca", "L&S")):
+        n = n.replace(a, b)
+    return n
+
+
+def montar_resumo(con):
+    agora = datetime.now()
+    corte = (agora - timedelta(hours=24)).isoformat()
+    n_varr = con.execute("SELECT COUNT(DISTINCT ts) FROM precos WHERE ts>=?", (corte,)).fetchone()[0]
+    linhas, cat = [], None
+    for p in PRODUTOS + VOOS:
+        if p["categoria"] != cat:
+            cat = p["categoria"]
+            linhas.append(f"\n{'✈️ ' if p in VOOS else ''}{cat.upper()}")
+        ts = con.execute("SELECT MAX(ts) FROM precos WHERE produto=?", (p["id"],)).fetchone()[0]
+        lin = con.execute("""SELECT loja, preco FROM precos WHERE produto=? AND ts=?
+                             ORDER BY preco LIMIT 1""", (p["id"], ts)).fetchone() if ts else None
+        if not lin:
+            linhas.append(f"• {_curto(p)}: sem preço")
+            continue
+        loja_, preco = lin
+        ts_ant = con.execute("SELECT MAX(ts) FROM precos WHERE produto=? AND ts<=?",
+                             (p["id"], corte)).fetchone()[0]
+        ant = con.execute("SELECT MIN(preco) FROM precos WHERE produto=? AND ts=?",
+                          (p["id"], ts_ant)).fetchone()[0] if ts_ant else None
+        seta = ""
+        if ant and abs(preco - ant) / ant >= 0.01:
+            seta = f" {'↓' if preco < ant else '↑'}{abs(preco / ant - 1) * 100:.0f}%"
+        alvo = alvo_de(con, p)
+        ok = " ✅" if alvo and preco <= alvo else ""
+        if p in VOOS:
+            loja_ = loja_.split(" · ")[0]  # só a companhia
+            inf = info_voo(con, p)
+            extra = f" · Google: {NIVEL_PT.get(inf[3], '?')}" if inf and inf[3] else ""
+        else:
+            extra = ""
+        alvo_txt = f" (alvo {reais(alvo, 0)})" if alvo else ""
+        linhas.append(f"• {_curto(p)}: {reais(preco, 0)} {loja_}{seta}{ok}{alvo_txt}{extra}")
+    usados, ultimo_voo = _uso_voos(con)
+    rodape = [f"\n{n_varr} varreduras nas últimas 24h"]
+    if VOOS:
+        rodape.append(f"Voos: {usados}/{VOOS_LIMITE_MES} buscas no mês"
+                      + (f", última às {ultimo_voo[11:16]} de {ultimo_voo[8:10]}/{ultimo_voo[5:7]}" if ultimo_voo else ""))
+    rodape.append("✅ = abaixo do alvo · ↓↑ = variação em 24h")
+    return "\n".join(linhas).strip() + "\n" + "\n".join(rodape)
+
+
+def resumo_diario(con):
+    """Manda o resumo 1x por dia (a partir de RESUMO_HORA). O 1º resumo sai na hora."""
+    hoje = datetime.now().strftime("%Y-%m-%d")
+    ja_mandou_hoje = con.execute("SELECT 1 FROM resumos WHERE data=?", (hoje,)).fetchone()
+    nunca_mandou = not con.execute("SELECT 1 FROM resumos").fetchone()
+    if ja_mandou_hoje or (datetime.now().hour < RESUMO_HORA and not nunca_mandou):
+        return
+    msg = montar_resumo(con)
+    print("\n" + msg)
+    telegram(msg)
+    ntfy(msg, 0)
+    con.execute("INSERT INTO resumos VALUES(?,?)", (hoje, datetime.now().isoformat(timespec="minutes")))
+    con.commit()
+
+
 def coletar():
     con, agora = db(), datetime.now().isoformat(timespec="minutes")
     alertas, ok, falhas = [], 0, 0
@@ -811,6 +888,7 @@ def coletar():
     print(f"\n  {ok} preços lidos, {falhas} fontes sem preço")
     for nivel, msg in sorted(alertas, key=lambda a: -a[0]):  # COMPRE AGORA primeiro
         print("\n" + msg); telegram(msg); ntfy(msg, nivel)
+    resumo_diario(con)
     gerar_relatorio(con, agora)
 
 
